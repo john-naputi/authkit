@@ -57,6 +57,33 @@ type session struct {
 	LastUsedAt *time.Time
 }
 
+func toAuthLoginLink(l *loginLink) authkit.LoginLink {
+	// We don't store CreatedAt/IP/UA in this mem store; nil/zero is fine for tests.
+	return authkit.LoginLink{
+		ID:           l.ID,
+		UserID:       l.UserID,
+		RedirectPath: l.RedirectPath,
+		ExpiresAt:    l.ExpiresAt,
+		ConsumedAt:   l.ConsumedAt,
+		CreatedIP:    nil,
+		CreatedUA:    nil,
+		CreatedAt:    time.Time{},
+	}
+}
+
+func toAuthSession(s *session) authkit.Session {
+	return authkit.Session{
+		ID:         s.ID,
+		UserID:     s.UserID,
+		ExpiresAt:  s.ExpiresAt,
+		RevokedAt:  s.RevokedAt,
+		LastUsedAt: s.LastUsedAt,
+		CreatedIP:  nil,
+		CreatedUA:  nil,
+		CreatedAt:  time.Time{},
+	}
+}
+
 func newMemStore() *memStore {
 	return &memStore{
 		usersByEmail:   make(map[string]authkit.User),
@@ -95,14 +122,14 @@ func (m *memStore) CreateLoginLink(ctx context.Context, tokenHash []byte, userID
 	return nil
 }
 
-func (m *memStore) GetLoginLinkByHash(_ context.Context, tokenHash []byte) (id string, userID string, redirectPath *string, expiresAt time.Time, consumedAt *time.Time, err error) {
+func (m *memStore) GetLoginLinkByHash(_ context.Context, tokenHash []byte) (authkit.LoginLink, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	l := m.loginByHash[string(tokenHash)]
 	if l == nil {
-		return "", "", nil, time.Time{}, nil, errNotFound
+		return authkit.LoginLink{}, errNotFound
 	}
-	return l.ID, l.UserID, l.RedirectPath, l.ExpiresAt, l.ConsumedAt, nil
+	return toAuthLoginLink(l), nil
 }
 
 func (m *memStore) ConsumeLoginLink(ctx context.Context, id string) (userID string, redirectPath *string, err error) {
@@ -127,14 +154,14 @@ func (m *memStore) CreateSession(ctx context.Context, userID string, tokenHash [
 	return nil
 }
 
-func (m *memStore) GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (sessionID string, userID string, expiresAt time.Time, revokedAt *time.Time, lastUsedAt *time.Time, err error) {
+func (m *memStore) GetSessionByTokenHash(_ context.Context, tokenHash []byte) (authkit.Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s := m.sessByHash[string(tokenHash)]
 	if s == nil {
-		return "", "", time.Time{}, nil, nil, errNotFound
+		return authkit.Session{}, errNotFound
 	}
-	return s.ID, s.UserID, s.ExpiresAt, s.RevokedAt, s.LastUsedAt, nil
+	return toAuthSession(s), nil
 }
 
 func (m *memStore) TouchSessionLastUsed(ctx context.Context, sessionID string) error {

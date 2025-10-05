@@ -189,26 +189,26 @@ func (s *Server) handleAuthExchange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	id, userID, redirectPath, expiresAt, consumedAt, err := s.deps.Store.GetLoginLinkByHash(ctx, hash)
+	ll, err := s.deps.Store.GetLoginLinkByHash(ctx, hash)
 	if err != nil {
 		gone(w, "invalid_or_consumed")
 		return
 	}
 	now := s.deps.Clock.Now()
-	if consumedAt != nil || now.After(expiresAt) {
+	if ll.ConsumedAt != nil || now.After(ll.ExpiresAt) {
 		// Standardize both cases as 410
 		gone(w, "link_expired_or_consumed")
 		return
 	}
 
 	// Mark link consumed (single-use)
-	usedUserID, storedRedirect, err := s.deps.Store.ConsumeLoginLink(ctx, id)
+	usedUserID, storedRedirect, err := s.deps.Store.ConsumeLoginLink(ctx, ll.ID)
 	if err != nil {
 		serverErr(w)
 		return
 	}
 	// Constant-time compare for paranoia, though IDs come from DB
-	if subtle.ConstantTimeCompare([]byte(usedUserID), []byte(userID)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(usedUserID), []byte(ll.UserID)) != 1 {
 		serverErr(w)
 		return
 	}
@@ -220,7 +220,7 @@ func (s *Server) handleAuthExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessExp := now.Add(s.cfg.SessionTTL)
-	if err := s.deps.Store.CreateSession(ctx, userID, sessHash, sessExp, clientIP(r), userAgent(r)); err != nil {
+	if err := s.deps.Store.CreateSession(ctx, ll.UserID, sessHash, sessExp, clientIP(r), userAgent(r)); err != nil {
 		serverErr(w)
 		return
 	}
@@ -231,7 +231,7 @@ func (s *Server) handleAuthExchange(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, httpapi.ExchangeResponse{
 		AccessToken: rawSess,
 		ExpiresAt:   sessExp,
-		Redirect:    coalesce(redirectPath, storedRedirect, &s.cfg.DefaultRedirect),
+		Redirect:    coalesce(ll.RedirectPath, storedRedirect, &s.cfg.DefaultRedirect),
 	})
 }
 
@@ -251,14 +251,14 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	id, userID, redirectPath, expiresAt, consumedAt, err := s.deps.Store.GetLoginLinkByHash(ctx, hash)
-	if err != nil || consumedAt != nil || s.deps.Clock.Now().After(expiresAt) {
+	ll, err := s.deps.Store.GetLoginLinkByHash(ctx, hash)
+	if err != nil || ll.ConsumedAt != nil || s.deps.Clock.Now().After(ll.ExpiresAt) {
 		// Non-verbose on browser flow; you may customize to a branded HTML page.
 		http.Error(w, "Link expired or already used.", http.StatusGone)
 		return
 	}
 
-	_, storedRedirect, err := s.deps.Store.ConsumeLoginLink(ctx, id)
+	_, storedRedirect, err := s.deps.Store.ConsumeLoginLink(ctx, ll.ID)
 	if err != nil {
 		serverErr(w)
 		return
@@ -271,13 +271,13 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	exp := s.deps.Clock.Now().Add(s.cfg.SessionTTL)
-	if err := s.deps.Store.CreateSession(ctx, userID, sessHash, exp, clientIP(r), userAgent(r)); err != nil {
+	if err := s.deps.Store.CreateSession(ctx, ll.UserID, sessHash, exp, clientIP(r), userAgent(r)); err != nil {
 		serverErr(w)
 		return
 	}
 	s.setSessionCookie(w, rawSess, exp)
 
-	target := coalesce(redirectPath, storedRedirect, &s.cfg.DefaultRedirect)
+	target := coalesce(ll.RedirectPath, storedRedirect, &s.cfg.DefaultRedirect)
 	// Defensive: ensure target is a relative path
 	if t, ok := isSafeRedirectPath(*target); ok {
 		http.Redirect(w, r, t, http.StatusFound)
@@ -304,12 +304,12 @@ func (s *Server) handleAuthCallbackJSON(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	ctx := r.Context()
-	id, userID, redirectPath, expiresAt, consumedAt, err := s.deps.Store.GetLoginLinkByHash(ctx, hash)
-	if err != nil || consumedAt != nil || s.deps.Clock.Now().After(expiresAt) {
+	ll, err := s.deps.Store.GetLoginLinkByHash(ctx, hash)
+	if err != nil || ll.ConsumedAt != nil || s.deps.Clock.Now().After(ll.ExpiresAt) {
 		gone(w, "link_expired_or_consumed")
 		return
 	}
-	_, storedRedirect, err := s.deps.Store.ConsumeLoginLink(ctx, id)
+	_, storedRedirect, err := s.deps.Store.ConsumeLoginLink(ctx, ll.ID)
 	if err != nil {
 		serverErr(w)
 		return
@@ -320,7 +320,7 @@ func (s *Server) handleAuthCallbackJSON(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	exp := s.deps.Clock.Now().Add(s.cfg.SessionTTL)
-	if err := s.deps.Store.CreateSession(ctx, userID, sessHash, exp, clientIP(r), userAgent(r)); err != nil {
+	if err := s.deps.Store.CreateSession(ctx, ll.UserID, sessHash, exp, clientIP(r), userAgent(r)); err != nil {
 		serverErr(w)
 		return
 	}
@@ -329,7 +329,7 @@ func (s *Server) handleAuthCallbackJSON(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, httpapi.ExchangeResponse{
 		AccessToken: rawSess,
 		ExpiresAt:   exp,
-		Redirect:    coalesce(redirectPath, storedRedirect, &s.cfg.DefaultRedirect),
+		Redirect:    coalesce(ll.RedirectPath, storedRedirect, &s.cfg.DefaultRedirect),
 	})
 }
 

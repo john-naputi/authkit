@@ -53,20 +53,20 @@ func (s *Server) requireAuth() middleware {
 				return
 			}
 
-			sessID, userID, exp, revokedAt, lastUsedAt, err := s.deps.Store.GetSessionByTokenHash(r.Context(), hash)
+			sess, err := s.deps.Store.GetSessionByTokenHash(r.Context(), hash)
 			now := s.deps.Clock.Now()
-			if err != nil || revokedAt != nil || now.After(exp) {
+			if err != nil || sess.RevokedAt != nil || now.After(sess.ExpiresAt) {
 				unauthorized(w, "invalid_or_expired")
 				return
 			}
 
 			// 3) Touch last_used_at at most once per minute (best-effort)
-			if lastUsedAt == nil || now.Sub(*lastUsedAt) > time.Duration(s.lastTouchTTL)*time.Second {
-				_ = s.deps.Store.TouchSessionLastUsed(r.Context(), sessID)
+			if sess.LastUsedAt == nil || now.Sub(*sess.LastUsedAt) > time.Duration(s.lastTouchTTL)*time.Second {
+				_ = s.deps.Store.TouchSessionLastUsed(r.Context(), sess.ID)
 			}
 
 			// 4) Continue with userID in context
-			ctx := withUserID(r.Context(), userID)
+			ctx := withUserID(r.Context(), sess.UserID)
 			nextH.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
