@@ -1,0 +1,51 @@
+# Go build outputs
+/bin/
+/build/
+/dist/
+/out/
+/tmp/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go modules
+vendor/
+go.work
+go.work.sum
+
+# IDE & editor junk
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+*.log
+.DS_Store
+Thumbs.db
+
+# Coverage & test data
+coverage.*
+*.coverprofile
+testdata/fuzz/
+*.fuzz
+*.prof
+*.tmp
+
+# OS-specific clutter
+ehthumbs.db
+desktop.ini
+
+# AuthKit specific
+# (exclude integration artifacts and local builds)
+authkit_local.db
+authkit_test.db
+migrate_logs/
+.env
+.env.*
+.envrc
+*.local.yaml
+*.local.json
+*.local.toml
